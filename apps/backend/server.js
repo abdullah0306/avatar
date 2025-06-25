@@ -20,23 +20,77 @@ app.get("/voices", async (req, res) => {
 });
 
 app.post("/tts", async (req, res) => {
-  const userMessage = await req.body.message;
-  const defaultMessages = await sendDefaultMessages({ userMessage });
-  if (defaultMessages) {
-    res.send({ messages: defaultMessages });
-    return;
-  }
-  let openAImessages;
   try {
-    openAImessages = await openAIChain.invoke({
-      question: userMessage,
-      format_instructions: parser.getFormatInstructions(),
-    });
+    const userMessage = req.body.message;
+    if (!userMessage) {
+      return res.status(400).send({ error: 'No message provided' });
+    }
+
+    console.log('\n=== New TTS Request ===');
+    console.log('Received message:', userMessage);
+    
+    // Check for default responses first
+    const defaultMessages = await sendDefaultMessages({ userMessage });
+    if (defaultMessages) {
+      console.log('Using default response');
+      return res.send({ messages: defaultMessages });
+    }
+
+    // Get response from OpenAI
+    let openAImessages;
+    try {
+      console.log('Calling OpenAI...');
+      const response = await openAIChain.invoke({
+        question: userMessage,
+        format_instructions: parser.getFormatInstructions(),
+      });
+      openAImessages = response?.messages || defaultResponse;
+      console.log('OpenAI response:', JSON.stringify(openAImessages, null, 2));
+    } catch (error) {
+      console.error('OpenAI Error:', error);
+      openAImessages = defaultResponse;
+    }
+
+    if (!openAImessages || !Array.isArray(openAImessages)) {
+      console.error('Invalid messages format from OpenAI:', openAImessages);
+      return res.status(500).send({ error: 'Failed to process message' });
+    }
+
+    // Process lip sync for each message
+    console.log(`Processing lip sync for ${openAImessages.length} messages...`);
+    const startTime = Date.now();
+    
+    try {
+      const result = await lipSync({ messages: openAImessages });
+      const processingTime = (Date.now() - startTime) / 1000;
+      console.log(`Lip sync completed in ${processingTime.toFixed(2)}s`);
+      
+      // Ensure we have valid audio data
+      const validMessages = result.map(msg => ({
+        ...msg,
+        audio: msg.audio || '',
+        visemes: Array.isArray(msg.visemes) ? msg.visemes : []
+      }));
+      
+      return res.send({ messages: validMessages });
+    } catch (lipSyncError) {
+      console.error('Lip sync processing error:', lipSyncError);
+      // Return messages without lip sync if processing fails
+      const fallbackMessages = openAImessages.map(msg => ({
+        ...msg,
+        audio: '',
+        visemes: []
+      }));
+      return res.send({ messages: fallbackMessages });
+    }
   } catch (error) {
-    openAImessages = defaultResponse;
+    console.error('Error in /tts endpoint:', error);
+    res.status(500).send({ 
+      error: 'Internal server error',
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
-  openAImessages = await lipSync({ messages: openAImessages.messages });
-  res.send({ messages: openAImessages });
 });
 
 app.post("/sts", async (req, res) => {

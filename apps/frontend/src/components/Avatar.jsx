@@ -18,16 +18,156 @@ export function Avatar(props) {
 
   useEffect(() => {
     if (!message) {
+      console.log("No message, resetting to idle state");
       setAnimation("Idle");
+      setFacialExpression("neutral");
+      setLipsync(null);
+      if (audio) {
+        audio.pause();
+        setAudio(null);
+      }
       return;
     }
-    setAnimation(message.animation);
-    setFacialExpression(message.facialExpression);
-    setLipsync(message.lipsync);
-    const audio = new Audio("data:audio/mp3;base64," + message.audio);
-    audio.play();
-    setAudio(audio);
-    audio.onended = onMessagePlayed;
+    
+    console.group("New message received");
+    console.log("Message keys:", Object.keys(message));
+    if (message.visemes) {
+      console.log("Visemes type:", Array.isArray(message.visemes) ? 'array' : typeof message.visemes);
+      if (Array.isArray(message.visemes)) {
+        console.log("First viseme:", message.visemes[0]);
+      } else if (message.visemes.mouthCues) {
+        console.log("Visemes has mouthCues, first one:", 
+          Array.isArray(message.visemes.mouthCues) ? message.visemes.mouthCues[0] : 'not an array');
+      }
+    }
+    if (message.lipsync) {
+      console.log("Lipsync keys:", Object.keys(message.lipsync));
+      if (message.lipsync.mouthCues) {
+        console.log("Mouth cues type:", Array.isArray(message.lipsync.mouthCues) ? 'array' : typeof message.lipsync.mouthCues);
+        if (Array.isArray(message.lipsync.mouthCues)) {
+          console.log("First mouth cue:", message.lipsync.mouthCues[0]);
+        }
+      }
+    }
+    console.groupEnd();
+    
+    // Set animation and facial expression
+    const newAnimation = message.animation || "Idle";
+    const newFacialExpression = message.facialExpression || "neutral";
+    
+    console.log(`Setting animation: ${newAnimation}, facial expression: ${newFacialExpression}`);
+    setAnimation(newAnimation);
+    setFacialExpression(newFacialExpression);
+    
+    // Handle visemes array directly from message.visemes (array of objects with 'viseme', 'start', 'end')
+    if (Array.isArray(message.visemes) && message.visemes.length > 0) {
+      console.log(`[LipSync] Found ${message.visemes.length} visemes in message.visemes`);
+      const mouthCues = message.visemes.map(v => ({
+        value: v.viseme || v.value || 'A',  // Default to 'A' if no viseme value
+        start: v.start || 0,
+        end: v.end || 0.1
+      }));
+      console.log('Processed mouthCues:', mouthCues);
+      setLipsync({
+        mouthCues,
+        duration: message.duration || (mouthCues.length > 0 ? mouthCues[mouthCues.length - 1].end : 0)
+      });
+    } 
+    // Handle case where visemes are in message.visemes.mouthCues
+    else if (message.visemes?.mouthCues && Array.isArray(message.visemes.mouthCues)) {
+      console.log(`[LipSync] Found ${message.visemes.mouthCues.length} visemes in message.visemes.mouthCues`);
+      const mouthCues = message.visemes.mouthCues.map(cue => ({
+        value: cue.viseme || cue.value || 'A',
+        start: cue.start || 0,
+        end: cue.end || 0.1
+      }));
+      console.log('Processed mouthCues from visemes.mouthCues:', mouthCues);
+      setLipsync({
+        mouthCues,
+        duration: message.visemes.duration || (mouthCues.length > 0 ? mouthCues[mouthCues.length - 1].end : 0)
+      });
+    }
+    // Handle lipsync data in message.lipsync
+    else if (message.lipsync?.mouthCues && Array.isArray(message.lipsync.mouthCues)) {
+      console.log(`[LipSync] Found ${message.lipsync.mouthCues.length} mouth cues in message.lipsync`);
+      const mouthCues = message.lipsync.mouthCues.map(cue => ({
+        value: cue.viseme || cue.value || 'A',
+        start: cue.start || 0,
+        end: cue.end || 0.1
+      }));
+      console.log('Processed mouthCues from lipsync.mouthCues:', mouthCues);
+      setLipsync({
+        mouthCues,
+        duration: message.lipsync.duration || (mouthCues.length > 0 ? mouthCues[mouthCues.length - 1].end : 0)
+      });
+    } 
+    // No viseme data found
+    else {
+      console.warn("[LipSync] No valid viseme data found in message");
+      console.log("Message structure:", JSON.stringify(message, null, 2));
+      setLipsync(null);
+    }
+    
+    // Play audio if available
+    if (message.audio) {
+      console.log("Initializing audio...");
+      
+      // Create a new audio element
+      const newAudio = new Audio("data:audio/mp3;base64," + message.audio);
+      
+      // Set up event handlers
+      newAudio.onplay = () => {
+        console.log("Audio started playing");
+        console.log(`Audio duration: ${newAudio.duration}s`);
+      };
+      
+      newAudio.onerror = (e) => {
+        console.error("Audio error:", e);
+        console.error("Audio error details:", newAudio.error);
+      };
+      
+      newAudio.onended = () => {
+        console.log("Audio ended");
+        // Reset lipsync when audio ends
+        setLipsync(null);
+        onMessagePlayed();
+      };
+      
+      // Store the audio element in state
+      setAudio(newAudio);
+      
+      // Start playing the audio after a short delay to ensure state is updated
+      const playAudio = () => {
+        console.log("Attempting to play audio...");
+        const playPromise = newAudio.play();
+        
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              console.log("Audio playback started successfully");
+            })
+            .catch(error => {
+              console.error("Error playing audio:", error);
+              // Try again after a short delay
+              setTimeout(() => {
+                console.log("Retrying audio playback...");
+                newAudio.play().catch(e => console.error("Retry failed:", e));
+              }, 100);
+            });
+        }
+      };
+      
+      // Try to play immediately
+      playAudio();
+      
+      // Clean up function
+      return () => {
+        console.log("Cleaning up audio...");
+        newAudio.pause();
+        newAudio.src = '';
+        newAudio.remove();
+      };
+    }
   }, [message]);
 
 
@@ -49,22 +189,51 @@ export function Avatar(props) {
   }, [animation]);
 
   const lerpMorphTarget = (target, value, speed = 0.1) => {
+    let targetFound = false;
+    
     scene.traverse((child) => {
       if (child.isSkinnedMesh && child.morphTargetDictionary) {
         const index = child.morphTargetDictionary[target];
         if (index === undefined || child.morphTargetInfluences[index] === undefined) {
+          // Debug: Log missing morph target
+          if (value > 0.1 && !targetFound) {
+            console.warn(`Morph target '${target}' not found in ${child.name}'s morphTargetDictionary`);
+            console.log('Available morph targets:', Object.keys(child.morphTargetDictionary));
+          }
           return;
         }
-        child.morphTargetInfluences[index] = THREE.MathUtils.lerp(child.morphTargetInfluences[index], value, speed);
+        
+        targetFound = true;
+        const currentValue = child.morphTargetInfluences[index];
+        const newValue = THREE.MathUtils.lerp(currentValue, value, speed);
+        
+        // Only update if the value has changed significantly
+        if (Math.abs(newValue - currentValue) > 0.001) {
+          child.morphTargetInfluences[index] = newValue;
+          // Mark the mesh as needing an update
+          child.morphTargetInfluences.needsUpdate = true;
+        }
       }
     });
+    
+    // If we're trying to set a non-zero value but didn't find the target, log a warning
+    if (value > 0.1 && !targetFound) {
+      console.warn(`Morph target '${target}' not found in any skinned mesh`);
+    }
   };
 
   const [blink, setBlink] = useState(false);
   const [facialExpression, setFacialExpression] = useState("");
   const [audio, setAudio] = useState();
 
+  // Track the last viseme to avoid spamming the console
+  const lastVisemeRef = useRef(null);
+  const lastLogTimeRef = useRef(0);
+
   useFrame(() => {
+    const now = Date.now();
+    
+    // Handle facial expressions
     !setupMode &&
       morphTargets.forEach((key) => {
         const mapping = facialExpressions[facialExpression];
@@ -78,6 +247,7 @@ export function Avatar(props) {
         }
       });
 
+    // Handle blinking
     lerpMorphTarget("eyeBlinkLeft", blink ? 1 : 0, 0.5);
     lerpMorphTarget("eyeBlinkRight", blink ? 1 : 0, 0.5);
 
@@ -85,25 +255,75 @@ export function Avatar(props) {
       return;
     }
 
-    const appliedMorphTargets = [];
-    if (message && lipsync) {
-      const currentAudioTime = audio.currentTime;
+    // Handle lip-sync with visemes array
+    if (audio && lipsync?.mouthCues?.length > 0) {
+      const currentAudioTime = audio.currentTime || 0;
+      let currentViseme = null;
+      let currentCue = null;
+      
+      // Find the current viseme based on audio time
       for (let i = 0; i < lipsync.mouthCues.length; i++) {
-        const mouthCue = lipsync.mouthCues[i];
-        if (currentAudioTime >= mouthCue.start && currentAudioTime <= mouthCue.end) {
-          appliedMorphTargets.push(visemesMapping[mouthCue.value]);
-          lerpMorphTarget(visemesMapping[mouthCue.value], 1, 0.2);
+        const cue = lipsync.mouthCues[i];
+        if (currentAudioTime >= cue.start && currentAudioTime <= cue.end) {
+          currentViseme = cue.value || 'A'; // Default to 'A' if no value
+          currentCue = cue;
           break;
         }
       }
-    }
-
-    Object.values(visemesMapping).forEach((value) => {
-      if (appliedMorphTargets.includes(value)) {
-        return;
+      
+      // Log viseme changes (throttled)
+      if (currentViseme && currentViseme !== lastVisemeRef.current && now - lastLogTimeRef.current > 100) {
+        console.log(`[LipSync] Viseme: ${currentViseme} at ${currentAudioTime.toFixed(2)}s (${currentCue?.start.toFixed(2)}-${currentCue?.end.toFixed(2)}s)`);
+        lastVisemeRef.current = currentViseme;
+        lastLogTimeRef.current = now;
       }
-      lerpMorphTarget(value, 0, 0.1);
-    });
+      
+      // Apply viseme morph targets
+      if (currentViseme) {
+        // First, reset all visemes
+        Object.values(visemesMapping).forEach(morphTargetName => {
+          lerpMorphTarget(morphTargetName, 0, 0.2);
+        });
+        
+        // Then apply the current viseme
+        const morphTargetName = visemesMapping[currentViseme];
+        if (morphTargetName) {
+          lerpMorphTarget(morphTargetName, 1, 0.4);
+        } else {
+          console.warn(`[LipSync] No mapping found for viseme: ${currentViseme}`);
+          console.log('Available viseme mappings:', Object.entries(visemesMapping));
+        }
+      }
+    } 
+    // If we have visemes but no audio, show the first viseme
+    else if (lipsync?.mouthCues?.length > 0) {
+      const firstViseme = lipsync.mouthCues[0]?.value || 'A';
+      const morphTargetName = visemesMapping[firstViseme];
+      
+      if (morphTargetName && (!lastVisemeRef.current || now - lastLogTimeRef.current > 1000)) {
+        console.log(`[LipSync] No audio, showing viseme: ${firstViseme}`);
+        lastVisemeRef.current = firstViseme;
+        lastLogTimeRef.current = now;
+      }
+      
+      // Reset all visemes first
+      Object.values(visemesMapping).forEach(name => {
+        lerpMorphTarget(name, 0, 0.1);
+      });
+      
+      // Apply the first viseme
+      if (morphTargetName) {
+        lerpMorphTarget(morphTargetName, 1, 0.1);
+      }
+    } 
+    // Reset all visemes when not speaking
+    else if (lipsync && lastVisemeRef.current !== null) {
+      console.log('[LipSync] Resetting visemes');
+      lastVisemeRef.current = null;
+      Object.values(visemesMapping).forEach(morphTargetName => {
+        lerpMorphTarget(morphTargetName, 0, 0.1);
+      });
+    }
   });
 
   useControls("FacialExpressions", {
