@@ -1,7 +1,0 @@
-@"
-[build]
-builder = "nixpacks"
-
-[deploy]
-startCommand = "cd apps/backend && yarn start"
-"@ | Out-File -FilePath "railway.toml" -Encoding utf8

@@ -19,6 +19,11 @@ app.get("/voices", async (req, res) => {
   res.send(await voice.getVoices(elevenLabsApiKey));
 });
 
+// Add a health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
 app.post("/tts", async (req, res) => {
   try {
     const userMessage = req.body.message;
