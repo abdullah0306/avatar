@@ -96,10 +96,24 @@ const safeUnlink = async (filePath) => {
   }
 };
 
+/**
+ * Get base64 encoded audio file content
+ */
+const getAudioBase64 = async (filePath) => {
+  try {
+    const audioData = await fs.readFile(filePath);
+    return audioData.toString('base64');
+  } catch (error) {
+    console.error('Error reading audio file:', error);
+    return '';
+  }
+};
+
 export { 
   execCommand, 
   readJsonFile as readJsonTranscript,
   audioFileToBase64,
   ensureDirectory,
-  safeUnlink
+  safeUnlink,
+  getAudioBase64
 };

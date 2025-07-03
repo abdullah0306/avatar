@@ -107,17 +107,26 @@ export const SpeechProvider = ({ children }) => {
   const tts = async (message) => {
     setLoading(true);
     try {
-      const data = await fetch(`${backendUrl}/tts`, {
+      const response = await fetch(`${backendUrl}/tts`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ message }),
       });
-      const response = (await data.json()).messages;
-      setMessages((messages) => [...messages, ...response]);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      if (data.messages && Array.isArray(data.messages)) {
+        setMessages(prevMessages => [...prevMessages, ...data.messages]);
+      } else {
+        console.error('Invalid response format:', data);
+      }
     } catch (error) {
-      console.error(error);
+      console.error('Error in TTS:', error);
     } finally {
       setLoading(false);
     }
