@@ -27,18 +27,40 @@ export const SpeechProvider = ({ children }) => {
     reader.onloadend = async function () {
       const base64Audio = reader.result.split(",")[1];
       setLoading(true);
+      
       try {
-        const data = await fetch(`${backendUrl}/sts`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+        // Send audio to STS (Speech-to-Text) endpoint
+        const response = await fetch(`${backendUrl}/sts`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ audio: base64Audio }),
         });
-        const response = (await data.json()).messages;
-        setMessages((messages) => [...messages, ...response]);
+        
+        if (!response.ok) {
+          throw new Error('Failed to process speech');
+        }
+        
+        const data = await response.json();
+        const responseMessages = data.messages || [];
+        
+        // Process each message through TTS
+        for (const message of responseMessages) {
+          if (message.text) {
+            // Send each message to TTS
+            const ttsResponse = await fetch(`${backendUrl}/tts`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ message: message.text }),
+            });
+            
+            if (ttsResponse.ok) {
+              const ttsData = await ttsResponse.json();
+              setMessages(prev => [...prev, ...ttsData.messages]);
+            }
+          }
+        }
       } catch (error) {
-        console.error(error);
+        console.error('Error processing speech:', error);
       } finally {
         setLoading(false);
       }

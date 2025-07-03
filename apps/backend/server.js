@@ -1,6 +1,9 @@
 import cors from "cors";
-import dotenv from "dotenv";
 import express from "express";
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+import { createServer } from 'http';
+import dotenv from "dotenv";
 import { openAIChain, parser } from "./modules/openAI.mjs";
 import { lipSync } from "./modules/lip-sync.mjs";
 import { sendDefaultMessages, defaultResponse } from "./modules/defaultMessages.mjs";
@@ -8,10 +11,15 @@ import { convertAudioToText } from "./modules/whisper.mjs";
 
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 const elevenLabsApiKey = process.env.ELEVEN_LABS_API_KEY;
 
 const app = express();
 app.use(express.json());
+
+// CORS configuration
 const corsOptions = {
   origin: ['https://avatar-frontend-eosin.vercel.app', 'http://localhost:5173'],
   methods: ['GET', 'POST', 'OPTIONS'],
@@ -19,8 +27,9 @@ const corsOptions = {
   credentials: true
 };
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // Enable preflight for all routes
-const port = 3000;
+app.options('*', cors(corsOptions));
+
+const port = process.env.PORT || 3000;
 
 app.get("/voices", async (req, res) => {
   res.send(await voice.getVoices(elevenLabsApiKey));
